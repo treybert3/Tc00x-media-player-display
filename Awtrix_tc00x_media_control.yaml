@@ -18,7 +18,7 @@ blueprint:
 
     mqtt_prefix:
       name: MQTT Prefix
-      description: The base topic prefix for your Awtrix device (e.g., awtrix_tc002 or Awtrix01).
+      description: Base topic prefix for your Awtrix device (e.g. awtrix_tc002 or Awtrix01).
       default: awtrix_tc002
       selector:
         text: {}
@@ -33,7 +33,7 @@ blueprint:
 
     enable_vol_controls:
       name: Enable Volume Control Events
-      description: Process knob rotations (TC002) or Left/Right button presses (TC001) for volume changes.
+      description: Process knob rotations (TC002) or Left/Right button presses (TC001).
       default: true
       selector:
         boolean: {}
@@ -47,49 +47,43 @@ blueprint:
 
     text_color:
       name: Text Color
-      description: Hex color code for display text (e.g., #ffffff).
+      description: Hex color code for display text.
       default: "#ffffff"
       selector:
         text: {}
 
     icon_volume:
       name: Icon for Volume
-      description: Icon name/ID for volume updates. Leave blank to omit icon field from payload.
       default: "sound"
       selector:
         text: {}
 
     icon_mute:
       name: Icon for Mute
-      description: Icon name/ID when muted. Leave blank to omit icon field.
       default: "sound"
       selector:
         text: {}
 
     icon_unmute:
       name: Icon for Unmute
-      description: Icon name/ID when unmuted. Leave blank to omit icon field.
       default: "sound"
       selector:
         text: {}
 
     text_mute:
       name: Text for Mute
-      description: Text displayed when muted.
       default: "Muted"
       selector:
         text: {}
 
     text_unmute:
       name: Text for Unmute
-      description: Text displayed when unmuted.
       default: "Unmuted"
       selector:
         text: {}
 
     duration_ms:
       name: Notification Duration
-      description: How long the notification displays on Awtrix in milliseconds.
       default: 5000
       selector:
         number:
@@ -106,7 +100,9 @@ variables:
   vol_enabled: !input enable_vol_controls
   mute_enabled: !input enable_select_mute
   media_player_target: !input media_player
-  prefix: !input mqtt_prefix
+  raw_prefix: !input mqtt_prefix
+  # Ensure prefix has no trailing slash for exact string matching in Jinja
+  prefix: "{{ raw_prefix | regex_replace('/+$', '') }}"
   mqtt_topic: "{{ prefix ~ '/cmd/notify' }}"
   txt_color: !input text_color
   icon_vol: !input icon_volume
@@ -117,12 +113,13 @@ variables:
   duration: !input duration_ms
 
 triggers:
-  # Wildcard MQTT Listener: Captures state payloads from the configured prefix
+  # Multi-level MQTT wildcard catches awtrix_tc002/state/knob, awtrix_tc002/state/buttons/select, etc.
   - trigger: mqtt
     topic: !input mqtt_prefix
+    # Home Assistant treats a prefix with /# in the selector input as multi-level wildcard.
+    # To enforce it regardless of user trailing slash:
     id: awtrix_mqtt_event
 
-  # Media Player State Triggers
   - trigger: state
     entity_id: !input media_player
     attribute: volume_level
@@ -142,8 +139,8 @@ actions:
           - condition: template
             value_template: |-
               {{ trigger.id == 'awtrix_mqtt_event' and (
-                (model == 'tc002' and trigger.topic == prefix ~ '/state/knob' and trigger.payload == 'cw') or
-                (model == 'tc001' and trigger.topic == prefix ~ '/state/buttons/right' and trigger.payload == '1')
+                (model == 'tc002' and trigger.topic.endswith('/state/knob') and trigger.payload == 'cw') or
+                (model == 'tc001' and trigger.topic.endswith('/state/buttons/right') and trigger.payload == '1')
               ) }}
         sequence:
           - if:
@@ -166,8 +163,8 @@ actions:
           - condition: template
             value_template: |-
               {{ trigger.id == 'awtrix_mqtt_event' and (
-                (model == 'tc002' and trigger.topic == prefix ~ '/state/knob' and trigger.payload == 'ccw') or
-                (model == 'tc001' and trigger.topic == prefix ~ '/state/buttons/left' and trigger.payload == '1')
+                (model == 'tc002' and trigger.topic.endswith('/state/knob') and trigger.payload == 'ccw') or
+                (model == 'tc001' and trigger.topic.endswith('/state/buttons/left') and trigger.payload == '1')
               ) }}
         sequence:
           - if:
@@ -183,14 +180,14 @@ actions:
             target:
               entity_id: !input media_player
 
-      # Option 3: Select Button Pressed (Toggle Mute)
+      # Option 3: Select Button (Toggle Mute)
       - conditions:
           - condition: template
             value_template: "{{ mute_enabled }}"
           - condition: template
             value_template: |-
               {{ trigger.id == 'awtrix_mqtt_event' and 
-                 trigger.topic == prefix ~ '/state/buttons/select' and 
+                 trigger.topic.endswith('/state/buttons/select') and 
                  trigger.payload == '1' }}
         sequence:
           - action: media_player.volume_mute
@@ -251,6 +248,7 @@ actions:
                 {
                   "text": "{{ label }}",
                   "textColor": "{{ txt_color }}",
+                  "icon": "{{ current_icon }}",
                   "durationMs": {{ duration }},
                   "stack": false
                 }
