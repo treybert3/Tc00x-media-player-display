@@ -90,11 +90,12 @@ mode: queued
 max: 50
 
 trigger_variables:
-  knob_topic: "{{ mqtt_prefix }}/state/knob"
-  button_left_topic: "{{ mqtt_prefix }}/state/buttons/left"
-  button_right_topic: "{{ mqtt_prefix }}/state/buttons/right"
-  button_select_topic: "{{ mqtt_prefix }}/state/buttons/select"
-  notify_topic: "{{ mqtt_prefix }}/cmd/notify"
+  base_prefix: !input mqtt_prefix
+  knob_topic: "{{ base_prefix }}/state/knob"
+  button_left_topic: "{{ base_prefix }}/state/buttons/left"
+  button_right_topic: "{{ base_prefix }}/state/buttons/right"
+  button_select_topic: "{{ base_prefix }}/state/buttons/select"
+  notify_topic: "{{ base_prefix }}/cmd/notify"
   
   
 
