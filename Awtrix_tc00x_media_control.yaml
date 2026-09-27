@@ -1,0 +1,269 @@
+blueprint:
+  name: Awtrix Control & Media Player Sync (TC001 / TC002)
+  description: Control a media player using an Awtrix TC002 (knob/select button) or TC001 (left/right/select buttons), and sync volume/mute display updates.
+  domain: automation
+  input:
+    device_model:
+      name: Device Model
+      description: Select your Awtrix hardware model.
+      default: tc002
+      selector:
+        select:
+          options:
+            - label: TC002 (Rotary Knob)
+              value: tc002
+            - label: TC001 (Buttons Only)
+              value: tc001
+    mqtt_prefix:
+      name: MQTT Prefix
+      description: The base topic prefix for your Awtrix device (e.g., awtrix_tc002 or Awtrix01).
+      default: awtrix_tc002
+      selector:
+        text: {}
+    media_player:
+      name: Media Player
+      description: The media player entity to control.
+      selector:
+        entity:
+          filter:
+            domain: media_player
+    enable_vol_controls:
+      name: Enable Volume Control Events
+      description: Process knob rotations (TC002) or Left/Right button presses (TC001) for volume changes.
+      default: true
+      selector:
+        boolean: {}
+    enable_select_mute:
+      name: Enable Select Button Mute Toggle
+      description: Process the select button press to toggle mute.
+      default: true
+      selector:
+        boolean: {}
+    text_color:
+      name: Text Color
+      description: Hex color code for display text (e.g., #ffffff).
+      default: "#ffffff"
+      selector:
+        text: {}
+    icon_volume:
+      name: Icon for Volume
+      description: Icon name/ID for volume updates. Leave blank to omit icon field from payload.
+      default: "sound"
+      selector:
+        text: {}
+    icon_mute:
+      name: Icon for Mute
+      description: Icon name/ID when muted. Leave blank to omit icon field.
+      default: "sound"
+      selector:
+        text: {}
+    icon_unmute:
+      name: Icon for Unmute
+      description: Icon name/ID when unmuted. Leave blank to omit icon field.
+      default: "sound"
+      selector:
+        text: {}
+    text_mute:
+      name: Text for Mute
+      description: Text displayed when muted.
+      default: "Muted"
+      selector:
+        text: {}
+    text_unmute:
+      name: Text for Unmute
+      description: Text displayed when unmuted.
+      default: "Unmuted"
+      selector:
+        text: {}
+    duration_ms:
+      name: Notification Duration
+      description: How long the notification displays on Awtrix in milliseconds.
+      default: 5000
+      selector:
+        number:
+          min: 1000
+          max: 30000
+          step: 500
+          unit_of_measurement: ms
+
+mode: queued
+max: 50
+
+triggers:
+  # TC002 Knob Triggers
+  - trigger: mqtt
+    options:
+      topic: "!input mqtt_prefix/state/knob"
+      payload: cw
+    id: tc002_cw
+
+  - trigger: mqtt
+    options:
+      topic: "!input mqtt_prefix/state/knob"
+      payload: ccw
+    id: tc002_ccw
+
+  # TC001 Button Triggers
+  - trigger: mqtt
+    options:
+      topic: "!input mqtt_prefix/state/buttons/right"
+      payload: "1"
+    id: tc001_right
+
+  - trigger: mqtt
+    options:
+      topic: "!input mqtt_prefix/state/buttons/left"
+      payload: "1"
+    id: tc001_left
+
+  # Shared Select Button Trigger
+  - trigger: mqtt
+    options:
+      topic: "!input mqtt_prefix/state/buttons/select"
+      payload: "1"
+    id: select_pressed
+
+  # Media Player State Triggers
+  - trigger: state
+    entity_id: !input media_player
+    attribute: volume_level
+    id: volume_changed
+
+  - trigger: state
+    entity_id: !input media_player
+    attribute: is_volume_muted
+    id: mute_changed
+
+actions:
+  - variables:
+      model: !input device_model
+      vol_enabled: !input enable_vol_controls
+      mute_enabled: !input enable_select_mute
+      media_player_target: !input media_player
+      mqtt_topic: "!input mqtt_prefix/cmd/notify"
+      txt_color: !input text_color
+      icon_vol: !input icon_volume
+      icon_m: !input icon_mute
+      icon_unm: !input icon_unmute
+      txt_m: !input text_mute
+      txt_unm: !input text_unmute
+      duration: !input duration_ms
+
+  - choose:
+      # Option 1: Volume Up (TC002 CW or TC001 Right Button)
+      - conditions:
+          - condition: template
+            value_template: "{{ vol_enabled }}"
+          - condition: template
+            value_template: >-
+              {{ (model == 'tc002' and trigger.id == 'tc002_cw') or 
+                 (model == 'tc001' and trigger.id == 'tc001_right') }}
+        sequence:
+          - if:
+              - condition: state
+                entity_id: !input media_player
+                attribute: is_volume_muted
+                state: true
+            then:
+              - action: media_player.volume_mute
+                target:
+                  entity_id: !input media_player
+                data:
+                  is_volume_muted: false
+          - action: media_player.volume_up
+            target:
+              entity_id: !input media_player
+
+      # Option 2: Volume Down (TC002 CCW or TC001 Left Button)
+      - conditions:
+          - condition: template
+            value_template: "{{ vol_enabled }}"
+          - condition: template
+            value_template: >-
+              {{ (model == 'tc002' and trigger.id == 'tc002_ccw') or 
+                 (model == 'tc001' and trigger.id == 'tc001_left') }}
+        sequence:
+          - if:
+              - condition: state
+                entity_id: !input media_player
+                attribute: is_volume_muted
+                state: true
+            then:
+              - action: media_player.volume_mute
+                target:
+                  entity_id: !input media_player
+                data:
+                  is_volume_muted: false
+          - action: media_player.volume_down
+            target:
+              entity_id: !input media_player
+
+      # Option 3: Select Button Pressed (Toggle Mute)
+      - conditions:
+          - condition: template
+            value_template: "{{ mute_enabled }}"
+          - condition: trigger
+            id: select_pressed
+        sequence:
+          - action: media_player.volume_mute
+            target:
+              entity_id: !input media_player
+            data:
+              is_volume_muted: >-
+                {{ not is_state_attr(media_player_target, 'is_volume_muted', true) }}
+
+      # Option 4: Volume Level Changed (Publish to Display)
+      - conditions:
+          - condition: trigger
+            id: volume_changed
+        sequence:
+          - action: mqtt.publish
+            data:
+              topic: "{{ mqtt_topic }}"
+              payload: |-
+                {% set vol = (trigger.to_state.attributes.volume_level | float(0) * 100) | round(0) %}
+                {% if icon_vol | trim != "" %}
+                {
+                  "text": "{{ vol }}",
+                  "textColor": "{{ txt_color }}",
+                  "icon": "{{ icon_vol }}",
+                  "durationMs": {{ duration }},
+                  "stack": false
+                }
+                {% else %}
+                {
+                  "text": "{{ vol }}",
+                  "textColor": "{{ txt_color }}",
+                  "durationMs": {{ duration }},
+                  "stack": false
+                }
+                {% endif %}
+
+      # Option 5: Mute Attribute Changed (Publish to Display)
+      - conditions:
+          - condition: trigger
+            id: mute_changed
+        sequence:
+          - action: mqtt.publish
+            data:
+              topic: "{{ mqtt_topic }}"
+              payload: |-
+                {% set is_muted = trigger.to_state.attributes.is_volume_muted %}
+                {% set label = txt_m if is_muted else txt_unm %}
+                {% set current_icon = icon_m if is_muted else icon_unm %}
+                {% if current_icon | trim != "" %}
+                {
+                  "text": "{{ label }}",
+                  "textColor": "{{ txt_color }}",
+                  "icon": "{{ current_icon }}",
+                  "durationMs": {{ duration }},
+                  "stack": false
+                }
+                {% else %}
+                {
+                  "text": "{{ label }}",
+                  "textColor": "{{ txt_color }}",
+                  "durationMs": {{ duration }},
+                  "stack": false
+                }
+                {% endif %}
