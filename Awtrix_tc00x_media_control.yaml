@@ -42,25 +42,26 @@ blueprint:
     text_color:
       name: Text Color
       description: Hex color code for display text (e.g., #ffffff).
-      default: "#ffffff"
+      default: [255, 255, 255]
       selector:
-        text: {}
+        color_rgb: {}
     icon_volume:
       name: Icon for Volume
-      description: Icon name/ID for volume updates. Leave blank to omit icon field from payload.
-      default: "sound"
+      description: Icon name (TC002) or icon ID# (TC001) for volume updates. Leave blank to omit icon field from payload.
+      optional: true
+      default: ""
       selector:
         text: {}
     icon_mute:
       name: Icon for Mute
-      description: Icon name/ID when muted. Leave blank to omit icon field.
-      default: "sound"
+      description: Icon name (TC002) or icon ID# (TC001) for volume updates. Leave blank to omit icon field from payload.
+      optional: true
       selector:
         text: {}
     icon_unmute:
       name: Icon for Unmute
-      description: Icon name/ID when unmuted. Leave blank to omit icon field.
-      default: "sound"
+      description: Icon name (TC002) or icon ID# (TC001) for volume updates. Leave blank to omit icon field from payload.
+      optional: true
       selector:
         text: {}
     text_mute:
@@ -150,7 +151,14 @@ actions:
       vol_enabled: !input enable_vol_controls
       mute_enabled: !input enable_select_mute
       media_player_target: !input media_player
-      txt_color: !input text_color
+      txt_color_raw: !input text_color
+      txt_color: >-
+        {% if txt_color_raw is mapping or txt_color_raw is list %}
+          {% set r, g, b = txt_color_raw %}
+          {{ "#%02x%02x%02x" | format(r, g, b) }}
+        {% else %}
+          {{ txt_color_raw }}
+        {% endif %}
       icon_vol: !input icon_volume
       icon_m: !input icon_mute
       icon_unm: !input icon_unmute
