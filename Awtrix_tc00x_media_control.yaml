@@ -169,7 +169,7 @@ actions:
         sequence:
           - action: mqtt.publish
             data:
-              topic: {{ thisTopic }}
+              topic: "{{ mqtt_topic }}"
               payload: |-
                 {% set vol = (trigger.to_state.attributes.volume_level | float(0) * 100) | round(0) %}
                 {% if icon_vol | trim != "" %}
