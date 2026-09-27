@@ -54,14 +54,14 @@ blueprint:
     icon_mute:
       name: Icon for Mute
       description: Icon name (TC002) or icon ID# (TC001) for volume updates. Leave blank to omit icon field from payload.
-      selector:
       default:
+      selector:
         text: {}
     icon_unmute:
       name: Icon for Unmute
       description: Icon name (TC002) or icon ID# (TC001) for volume updates. Leave blank to omit icon field from payload.
-      selector:
       default:
+      selector:      
         text: {}
     text_mute:
       name: Text for Mute
