@@ -1,183 +1,169 @@
 blueprint:
   name: Awtrix Knob & Media Player Sync
-  description: Control a media player using an MQTT rotary knob (with mute toggle and auto-unmute), and send status updates to an Awtrix display.
+  description: Syncs MQTT volume knob and button actions from an Awtrix light display to a target media player and sends real-time volume/mute feedback notifications.
   domain: automation
   input:
-    mqtt_prefix:
-      name: MQTT Prefix
-      description: The base topic prefix for your Awtrix device (e.g., awtrix_tc002).
+    awtrix_topic:
+      name: Awtrix MQTT Prefix Topic
+      description: The base MQTT topic for your Awtrix display (e.g., awtrix_tc002 or awtrix).
       default: awtrix_tc002
       selector:
         text: {}
-    media_player:
-      name: Media Player
-      description: The media player entity to control.
+    target_media_player:
+      name: Target Media Player
+      description: The media player entity to control and monitor.
       selector:
         entity:
-          filter:
-            domain: media_player
+          domain: media_player
     text_color:
-      name: Text Color
-      description: Hex color code for display text (e.g., #ffffff).
+      name: Notification Text Color
+      description: Hex color code for display text.
       default: "#ffffff"
       selector:
-        text: {}
-    icon_volume:
-      name: Icon for Volume
-      description: Icon name/ID for volume updates. Leave blank to omit the icon line from the MQTT payload.
-      default: "sound"
+        color_rgb: {}
+    volume_icon:
+      name: Volume Icon
+      description: Awtrix icon name for volume changes.
+      default: sound
       selector:
         text: {}
-    icon_mute:
-      name: Icon for Mute
-      description: Icon name/ID when muted. Leave blank to omit the icon line.
-      default: "sound"
+    muted_icon:
+      name: Muted Icon
+      description: Awtrix icon name when muted.
+      default: sound
       selector:
         text: {}
-    icon_unmute:
-      name: Icon for Unmute
-      description: Icon name/ID when unmuted. Leave blank to omit the icon line.
-      default: "sound"
+    unmuted_icon:
+      name: Unmuted Icon
+      description: Awtrix icon name when unmuted.
+      default: sound
       selector:
         text: {}
-    text_mute:
-      name: Text for Mute
-      description: Text displayed when muted.
-      default: "Muted"
+    muted_text:
+      name: Muted Text Label
+      description: Text shown when player is muted.
+      default: Muted
       selector:
         text: {}
-    text_unmute:
-      name: Text for Unmute
-      description: Text displayed when unmuted.
-      default: "Unmuted"
+    unmuted_text:
+      name: Unmuted Text Label
+      description: Text shown when player is unmuted.
+      default: Unmuted
       selector:
         text: {}
-    duration_ms:
-      name: Notification Duration
-      description: How long the notification displays on Awtrix in milliseconds.
+    notification_duration:
+      name: Notification Duration (ms)
+      description: Duration in milliseconds for the notification to display on screen.
       default: 5000
       selector:
         number:
           min: 1000
-          max: 30000
+          max: 15000
           step: 500
           unit_of_measurement: ms
 
 mode: queued
 max: 50
 
-variables:
-  thisTopic: !input mqtt_prefix
-  knobTopic: "{{thisTopic}}/state/knob"
-  
 triggers:
   - trigger: mqtt
-    options:
-      topic: "{{knobTopic}}"
-      payload: cw
+    topic: !input awtrix_topic
+    payload: cw
     id: volume_up
 
   - trigger: mqtt
-    options:
-      topic: "{{ thisTopic }}/state/knob"
-      payload: ccw
+    topic: !input awtrix_topic
+    payload: ccw
     id: volume_down
 
   - trigger: mqtt
-    options:
-      topic: "{{ thisTopic }}/state/buttons/select"
-      payload: "1"
+    topic: !input awtrix_topic
+    payload: "1"
     id: toggle_mute
 
   - trigger: state
-    entity_id: !input media_player
+    entity_id: !input target_media_player
     attribute: volume_level
     id: volume_changed
 
   - trigger: state
-    entity_id: !input media_player
+    entity_id: !input target_media_player
     attribute: is_volume_muted
     id: mute_changed
 
-actions:
+action:
   - variables:
-      media_player_target: !input media_player
-      mqtt_topic: "{{ thisTopic }}/cmd/notify"
+      base_topic: !input awtrix_topic
+      media_player_target: !input target_media_player
+      mqtt_notify_topic: "{{ base_topic }}/cmd/notify"
       txt_color: !input text_color
-      icon_vol: !input icon_volume
-      icon_m: !input icon_mute
-      icon_unm: !input icon_unmute
-      txt_m: !input text_mute
-      txt_unm: !input text_unmute
-      duration: !input duration_ms
+      icon_vol: !input volume_icon
+      icon_m: !input muted_icon
+      icon_unm: !input unmuted_icon
+      txt_m: !input muted_text
+      txt_unm: !input unmuted_text
+      duration: !input notification_duration
 
   - choose:
-      # Option 1: Volume Up (Unmutes first if muted)
       - conditions:
           - condition: trigger
             id: volume_up
         sequence:
           - if:
-              - condition: state
-                entity_id: !input media_player
-                attribute: is_volume_muted
-                state: true
+              - condition: template
+                value_template: "{{ is_state_attr(media_player_target, 'is_volume_muted', true) }}"
             then:
               - action: media_player.volume_mute
                 target:
-                  entity_id: !input media_player
+                  entity_id: !input target_media_player
                 data:
                   is_volume_muted: false
           - action: media_player.volume_up
             target:
-              entity_id: !input media_player
+              entity_id: !input target_media_player
 
-      # Option 2: Volume Down (Unmutes first if muted)
       - conditions:
           - condition: trigger
             id: volume_down
         sequence:
           - if:
-              - condition: state
-                entity_id: !input media_player
-                attribute: is_volume_muted
-                state: true
+              - condition: template
+                value_template: "{{ is_state_attr(media_player_target, 'is_volume_muted', true) }}"
             then:
               - action: media_player.volume_mute
                 target:
-                  entity_id: !input media_player
+                  entity_id: !input target_media_player
                 data:
                   is_volume_muted: false
           - action: media_player.volume_down
             target:
-              entity_id: !input media_player
+              entity_id: !input target_media_player
 
-      # Option 3: Toggle Mute
       - conditions:
           - condition: trigger
             id: toggle_mute
         sequence:
           - action: media_player.volume_mute
             target:
-              entity_id: !input media_player
+              entity_id: !input target_media_player
             data:
               is_volume_muted: >-
                 {{ not is_state_attr(media_player_target, 'is_volume_muted', true) }}
 
-      # Option 4: Send volume update to Awtrix display
       - conditions:
           - condition: trigger
             id: volume_changed
         sequence:
           - action: mqtt.publish
             data:
-              topic: "{{ mqtt_topic }}"
-              payload: |-
+              topic: "{{ mqtt_notify_topic }}"
+              payload: >-
                 {% set vol = (trigger.to_state.attributes.volume_level | float(0) * 100) | round(0) %}
+                {% set color_str = txt_color if txt_color is string else '#%02x%02x%02x' % (txt_color[0], txt_color[1], txt_color[2]) %}
                 {% if icon_vol | trim != "" %}
                 {
                   "text": "{{ vol }}",
-                  "textColor": "{{ txt_color }}",
+                  "textColor": "{{ color_str }}",
                   "icon": "{{ icon_vol }}",
                   "durationMs": {{ duration }},
                   "stack": false
@@ -185,28 +171,28 @@ actions:
                 {% else %}
                 {
                   "text": "{{ vol }}",
-                  "textColor": "{{ txt_color }}",
+                  "textColor": "{{ color_str }}",
                   "durationMs": {{ duration }},
                   "stack": false
                 }
                 {% endif %}
 
-      # Option 5: Send mute status update to Awtrix display
       - conditions:
           - condition: trigger
             id: mute_changed
         sequence:
           - action: mqtt.publish
             data:
-              topic: "{{ mqtt_topic }}"
+              topic: "{{ mqtt_notify_topic }}"
               payload: |-
                 {% set is_muted = trigger.to_state.attributes.is_volume_muted %}
                 {% set label = txt_m if is_muted else txt_unm %}
                 {% set current_icon = icon_m if is_muted else icon_unm %}
+                {% set color_str = txt_color if txt_color is string else '#%02x%02x%02x' % (txt_color[0], txt_color[1], txt_color[2]) %}
                 {% if current_icon | trim != "" %}
                 {
                   "text": "{{ label }}",
-                  "textColor": "{{ txt_color }}",
+                  "textColor": "{{ color_str }}",
                   "icon": "{{ current_icon }}",
                   "durationMs": {{ duration }},
                   "stack": false
@@ -214,7 +200,7 @@ actions:
                 {% else %}
                 {
                   "text": "{{ label }}",
-                  "textColor": "{{ txt_color }}",
+                  "textColor": "{{ color_str }}",
                   "durationMs": {{ duration }},
                   "stack": false
                 }
