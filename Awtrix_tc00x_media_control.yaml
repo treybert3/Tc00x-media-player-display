@@ -68,10 +68,12 @@ max: 50
 
 variables:
   thisTopic: !input mqtt_prefix
+  knobTopic: "{{thisTopic}}/state/knob"
+  
 triggers:
   - trigger: mqtt
     options:
-      topic: "{{ thisTopic }}/state/knob"
+      topic: {{knobTopic}}
       payload: cw
     id: volume_up
 
