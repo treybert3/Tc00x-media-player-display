@@ -106,8 +106,8 @@ variables:
   vol_enabled: !input enable_vol_controls
   mute_enabled: !input enable_select_mute
   media_player_target: !input media_player
-  mqtt_prefix_value: !input mqtt_prefix
-  mqtt_topic: "{{ mqtt_prefix_value }}/cmd/notify"
+  prefix: !input mqtt_prefix
+  mqtt_topic: "{{ prefix ~ '/cmd/notify' }}"
   txt_color: !input text_color
   icon_vol: !input icon_volume
   icon_m: !input icon_mute
@@ -117,39 +117,10 @@ variables:
   duration: !input duration_ms
 
 triggers:
-
-  # TC002 Knob Triggers
+  # Wildcard MQTT Listener: Captures state payloads from the configured prefix
   - trigger: mqtt
-    options:
-      topic: "{{ mqtt_prefix_value }}/state/knob"
-      payload: cw
-    id: tc002_cw
-
-  - trigger: mqtt
-    options:
-      topic: "{{ mqtt_prefix_value }}/state/knob"
-      payload: ccw
-    id: tc002_ccw
-
-  # TC001 Button Triggers
-  - trigger: mqtt
-    options:
-      topic: "{{ mqtt_prefix_value }}/state/buttons/right"
-      payload: "1"
-    id: tc001_right
-
-  - trigger: mqtt
-    options:
-      topic: "{{ mqtt_prefix_value }}/state/buttons/left"
-      payload: "1"
-    id: tc001_left
-
-  # Shared Select Button Trigger
-  - trigger: mqtt
-    options:
-      topic: "{{ mqtt_prefix_value }}/state/buttons/select"
-      payload: "1"
-    id: select_pressed
+    topic: !input mqtt_prefix
+    id: awtrix_mqtt_event
 
   # Media Player State Triggers
   - trigger: state
@@ -163,74 +134,65 @@ triggers:
     id: mute_changed
 
 actions:
-
   - choose:
-
-      # Option 1: Volume Up
-      # TC002 CW or TC001 Right Button
+      # Option 1: Volume Up (TC002 CW or TC001 Right Button)
       - conditions:
           - condition: template
             value_template: "{{ vol_enabled }}"
           - condition: template
-            value_template: >-
-              {{ (model == 'tc002' and trigger.id == 'tc002_cw')
-                 or
-                 (model == 'tc001' and trigger.id == 'tc001_right') }}
+            value_template: |-
+              {{ trigger.id == 'awtrix_mqtt_event' and (
+                (model == 'tc002' and trigger.topic == prefix ~ '/state/knob' and trigger.payload == 'cw') or
+                (model == 'tc001' and trigger.topic == prefix ~ '/state/buttons/right' and trigger.payload == '1')
+              ) }}
         sequence:
-
           - if:
-              - condition: state
-                entity_id: !input media_player
-                attribute: is_volume_muted
-                state: true
+              - condition: template
+                value_template: "{{ is_state_attr(media_player_target, 'is_volume_muted', true) }}"
             then:
               - action: media_player.volume_mute
                 target:
                   entity_id: !input media_player
                 data:
                   is_volume_muted: false
-
           - action: media_player.volume_up
             target:
               entity_id: !input media_player
 
-      # Option 2: Volume Down
-      # TC002 CCW or TC001 Left Button
+      # Option 2: Volume Down (TC002 CCW or TC001 Left Button)
       - conditions:
           - condition: template
             value_template: "{{ vol_enabled }}"
           - condition: template
-            value_template: >-
-              {{ (model == 'tc002' and trigger.id == 'tc002_ccw')
-                 or
-                 (model == 'tc001' and trigger.id == 'tc001_left') }}
+            value_template: |-
+              {{ trigger.id == 'awtrix_mqtt_event' and (
+                (model == 'tc002' and trigger.topic == prefix ~ '/state/knob' and trigger.payload == 'ccw') or
+                (model == 'tc001' and trigger.topic == prefix ~ '/state/buttons/left' and trigger.payload == '1')
+              ) }}
         sequence:
-
           - if:
-              - condition: state
-                entity_id: !input media_player
-                attribute: is_volume_muted
-                state: true
+              - condition: template
+                value_template: "{{ is_state_attr(media_player_target, 'is_volume_muted', true) }}"
             then:
               - action: media_player.volume_mute
                 target:
                   entity_id: !input media_player
                 data:
                   is_volume_muted: false
-
           - action: media_player.volume_down
             target:
               entity_id: !input media_player
 
-      # Option 3: Select Button Pressed
-      # Toggle Mute
+      # Option 3: Select Button Pressed (Toggle Mute)
       - conditions:
           - condition: template
             value_template: "{{ mute_enabled }}"
-          - condition: trigger
-            id: select_pressed
+          - condition: template
+            value_template: |-
+              {{ trigger.id == 'awtrix_mqtt_event' and 
+                 trigger.topic == prefix ~ '/state/buttons/select' and 
+                 trigger.payload == '1' }}
         sequence:
-
           - action: media_player.volume_mute
             target:
               entity_id: !input media_player
@@ -238,13 +200,11 @@ actions:
               is_volume_muted: >-
                 {{ not is_state_attr(media_player_target, 'is_volume_muted', true) }}
 
-      # Option 4: Volume Level Changed
-      # Publish to Awtrix Display
+      # Option 4: Volume Level Changed (Publish to Awtrix Display)
       - conditions:
           - condition: trigger
             id: volume_changed
         sequence:
-
           - action: mqtt.publish
             data:
               topic: "{{ mqtt_topic }}"
@@ -267,13 +227,11 @@ actions:
                 }
                 {% endif %}
 
-      # Option 5: Mute Attribute Changed
-      # Publish to Awtrix Display
+      # Option 5: Mute Attribute Changed (Publish to Awtrix Display)
       - conditions:
           - condition: trigger
             id: mute_changed
         sequence:
-
           - action: mqtt.publish
             data:
               topic: "{{ mqtt_topic }}"
@@ -281,7 +239,6 @@ actions:
                 {% set is_muted = trigger.to_state.attributes.is_volume_muted %}
                 {% set label = txt_m if is_muted else txt_unm %}
                 {% set current_icon = icon_m if is_muted else icon_unm %}
-
                 {% if current_icon | trim != "" %}
                 {
                   "text": "{{ label }}",
