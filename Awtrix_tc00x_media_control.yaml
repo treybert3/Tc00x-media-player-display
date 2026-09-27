@@ -73,7 +73,7 @@ variables:
 triggers:
   - trigger: mqtt
     options:
-      topic: {{knobTopic}}
+      topic: "{{knobTopic}}"
       payload: cw
     id: volume_up
 
